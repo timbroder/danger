@@ -3,6 +3,7 @@
 * Add your own contribution below
 
 * Fixed --new-comment not working with Bitbucket - Bruno Rocha
+* Change from git fetch --unshallow to git fetch --depth=1000000 - Juanito Fatas
 
 ## 4.0.0
 
