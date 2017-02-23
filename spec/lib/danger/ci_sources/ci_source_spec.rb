@@ -12,6 +12,7 @@ RSpec.describe Danger::CI do
           "Danger::Drone",
           "Danger::GitLabCI",
           "Danger::Jenkins",
+          "Danger::Scrutinizer",
           "Danger::Semaphore",
           "Danger::Surf",
           "Danger::TeamCity",

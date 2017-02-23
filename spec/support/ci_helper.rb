@@ -83,6 +83,15 @@ module Danger
         yield(system_env)
       end
 
+      def with_scrutinizer_setup_and_is_a_pull_request
+        system_env = {
+          "SCRUTINIZER" => "true",
+          "SCRUTINIZER_PR_NUMBER" => "42"
+        }
+
+        yield(system_env)
+      end
+
       def with_semaphore_setup_and_is_a_pull_request
         system_env = {
           "SEMAPHORE" => "true",

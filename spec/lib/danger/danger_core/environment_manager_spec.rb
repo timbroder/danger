@@ -44,6 +44,12 @@ RSpec.describe Danger::EnvironmentManager, use: :ci_helper do
       end
     end
 
+    it "loads Scrutinizer" do
+      with_scrutinizer_setup_and_is_a_pull_request do |system_env|
+        expect(described_class.local_ci_source(system_env)).to eq Danger::Scrutinizer
+      end
+    end
+
     it "loads Semaphore" do
       with_semaphore_setup_and_is_a_pull_request do |system_env|
         expect(described_class.local_ci_source(system_env)).to eq Danger::Semaphore
@@ -121,6 +127,12 @@ RSpec.describe Danger::EnvironmentManager, use: :ci_helper do
     it "loads Local Git Repo" do
       with_localgitrepo_setup do |system_env|
         expect(described_class.pr?(system_env)).to eq(false)
+      end
+    end
+
+    it "loads Scrutinizer" do
+      with_scrutinizer_setup_and_is_a_pull_request do |system_env|
+        expect(described_class.pr?(system_env)).to eq(true)
       end
     end
 

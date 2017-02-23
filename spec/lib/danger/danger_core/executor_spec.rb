@@ -54,6 +54,12 @@ RSpec.describe Danger::Executor, use: :ci_helper do
         end
       end
 
+      it "not raises error on Scrutinizer" do
+        with_scrutinizer_setup_and_is_a_pull_request do |system_env|
+          expect { described_class.new(system_env).validate!(testing_ui) }.not_to raise_error
+        end
+      end
+
       it "not raises error on Semaphore" do
         with_semaphore_setup_and_is_a_pull_request do |system_env|
           expect { described_class.new(system_env) }.not_to raise_error
