@@ -1,4 +1,5 @@
 # coding: utf-8
+
 require "danger/request_sources/bitbucket_cloud"
 
 RSpec.describe Danger::RequestSources::BitbucketCloud, host: :bitbucket_cloud do
@@ -35,7 +36,7 @@ RSpec.describe Danger::RequestSources::BitbucketCloud, host: :bitbucket_cloud do
 
     describe "#pr_json[:title]" do
       it "has fetched the pull requests title" do
-        expect(bs.pr_json[:title]).to eq("This is a danger test")
+        expect(bs.pr_json[:title]).to eq("This is a danger test for bitbucket cloud")
       end
     end
   end

@@ -27,6 +27,18 @@ RSpec.describe Danger::GitRepo, host: :github do
         end.to raise_error(RuntimeError, /doesn't exist/)
       end
     end
+
+    it "passes commits count in branch to git log" do
+      with_git_repo do |dir|
+        @dm = testing_dangerfile
+
+        expect_any_instance_of(Git::Base).to(
+          receive(:log).with(1).and_call_original
+        )
+
+        @dm.env.scm.diff_for_folder(dir)
+      end
+    end
   end
 
   describe "Return Types" do
@@ -64,7 +76,8 @@ RSpec.describe Danger::GitRepo, host: :github do
         @dm = testing_dangerfile
         @dm.env.scm.diff_for_folder(dir, from: "master", to: "new")
 
-        expect(@dm.git.added_files).to eq(["file2"])
+        expect(@dm.git.added_files).to eq(Danger::FileList.new(["file2"]))
+        expect(@dm.git.diff_for_file("file2")).not_to be_nil
       end
     end
 
@@ -83,7 +96,7 @@ RSpec.describe Danger::GitRepo, host: :github do
 
           @dm = testing_dangerfile
           @dm.env.scm.diff_for_folder(dir, from: "master", to: "new")
-          expect(@dm.git.deleted_files).to eq(["file"])
+          expect(@dm.git.deleted_files).to eq(Danger::FileList.new(["file"]))
         end
       end
     end
@@ -105,7 +118,33 @@ RSpec.describe Danger::GitRepo, host: :github do
           @dm.env.scm.diff_for_folder(dir, from: "master", to: "new")
 
           # Need to compact here because c50713a changes make AppVeyor fail
-          expect(@dm.git.modified_files.compact).to eq(["file"])
+          expect(@dm.git.modified_files.compact).to eq(Danger::FileList.new(["file"]))
+        end
+      end
+    end
+
+    it "handles moved files as expected" do
+      Dir.mktmpdir do |dir|
+        Dir.chdir dir do
+          subfolder = "subfolder"
+
+          `git init`
+          `git config diff.renames true`
+          `git remote add origin git@github.com:danger/danger.git`
+          File.open(dir + "/file", "w") { |file| file.write("hi\n\nfb\nasdasd") }
+          `git add .`
+          `git commit -m "ok"`
+          `git checkout -b new --quiet`
+          `mkdir "#{subfolder}"`
+          `git mv file "#{subfolder}"`
+          `git commit -m "another"`
+
+          @dm = testing_dangerfile
+          @dm.env.scm.diff_for_folder(dir, from: "master", to: "new")
+
+          # Need to compact here because c50713a changes make AppVeyor fail
+          expect(@dm.git.modified_files.compact).to eq(Danger::FileList.new(["file"]))
+          expect(@dm.git.diff_for_file("file")).not_to be_nil
         end
       end
     end
@@ -164,6 +203,52 @@ RSpec.describe Danger::GitRepo, host: :github do
 
           messages = @dm.git.commits.map(&:message)
           expect(messages).to eq(["another"])
+        end
+      end
+    end
+  end
+
+  describe "#renamed_files" do
+    it "returns array of hashes with names before and after" do
+      Dir.mktmpdir do |dir|
+        Dir.chdir dir do
+          `git init`
+          `git remote add origin git@github.com:danger/danger.git`
+
+          Dir.mkdir(File.join(dir, "first"))
+          Dir.mkdir(File.join(dir, "second"))
+
+          File.open(File.join(dir, "first", "a"), "w") { |f| f.write("hi") }
+          File.open(File.join(dir, "second", "b"), "w") { |f| f.write("bye") }
+          File.open(File.join(dir, "c"), "w") { |f| f.write("Hello") }
+
+          `git add .`
+          `git commit -m "Add files"`
+          `git checkout -b rename_files --quiet`
+
+          File.delete(File.join(dir, "first", "a"))
+          File.delete(File.join(dir, "second", "b"))
+          File.delete(File.join(dir, "c"))
+
+          File.open(File.join(dir, "a"), "w") { |f| f.write("hi") }
+          File.open(File.join(dir, "first", "b"), "w") { |f| f.write("bye") }
+          File.open(File.join(dir, "second", "c"), "w") { |f| f.write("Hello") }
+
+          # Use -A here cause for older versions of git
+          # add . don't add removed files to index
+          `git add -A .`
+          `git commit -m "Rename files"`
+
+          @dm = testing_dangerfile
+          @dm.env.scm.diff_for_folder(dir, from: "master", to: "rename_files")
+
+          expectation = [
+            { before: "first/a", after: "a" },
+            { before: "second/b", after: "first/b" },
+            { before: "c", after: "second/c" }
+          ]
+
+          expect(@dm.git.renamed_files).to eq(expectation)
         end
       end
     end

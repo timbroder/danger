@@ -1,7 +1,7 @@
 # coding: utf-8
+
 require "octokit"
 require "danger/ci_source/ci_source"
-require "danger/request_sources/github/octokit_pr_review"
 require "danger/request_sources/github/github_review_resolver"
 require "danger/danger_core/messages/violation"
 require "danger/danger_core/messages/markdown"
@@ -64,7 +64,7 @@ module Danger
           # If the review resolver says that there is nothing to submit we skip submission
           return unless ReviewResolver.should_submit?(self, submission_body)
 
-          @review_json = @client.create_pull_request_review(@ci_source.repo_slug, @ci_source.pull_request_id, generate_event(general_violations), submission_body)
+          @review_json = @client.create_pull_request_review(@ci_source.repo_slug, @ci_source.pull_request_id, event: generate_event(general_violations), body: submission_body)
         end
 
         def generated_by_danger?(danger_id = "danger")

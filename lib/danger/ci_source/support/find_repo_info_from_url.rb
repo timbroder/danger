@@ -3,9 +3,19 @@ require "danger/ci_source/support/repo_info"
 module Danger
   class FindRepoInfoFromURL
     REGEXP = %r{
-      (?<slug>[^/]+/[^/]+)
+      ://[^/]+/
+      (?<slug>[^/]+(/[^/]+){1,2})
       (/(pull|merge_requests|pull-requests)/)
       (?<id>\d+)
+    }x
+    
+    # Regex used to extract info from Bitbucket server URLs, as they use a quite different format
+    REGEXPBB = %r{
+      (?:[\/:])projects
+      \/([^\/.]+)
+      \/repos\/([^\/.]+)
+      \/pull-requests
+      \/(\d+)
     }x
 
     def initialize(url)
@@ -13,10 +23,15 @@ module Danger
     end
 
     def call
-      matched = url.match(REGEXP)
+      matched = url.match(REGEXPBB)
 
       if matched
-        RepoInfo.new(matched[:slug], matched[:id])
+        RepoInfo.new("#{matched[1]}/#{matched[2]}", matched[3])
+      else
+        matched = url.match(REGEXP)
+        if matched
+          RepoInfo.new(matched[:slug], matched[:id])
+        end
       end
     end
 

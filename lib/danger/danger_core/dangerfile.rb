@@ -10,6 +10,8 @@ require "danger/danger_core/plugins/dangerfile_github_plugin"
 require "danger/danger_core/plugins/dangerfile_gitlab_plugin"
 require "danger/danger_core/plugins/dangerfile_bitbucket_server_plugin"
 require "danger/danger_core/plugins/dangerfile_bitbucket_cloud_plugin"
+require "danger/danger_core/plugins/dangerfile_vsts_plugin"
+require "danger/danger_core/plugins/dangerfile_local_only_plugin"
 
 module Danger
   class Dangerfile
@@ -37,7 +39,7 @@ module Danger
 
     # The ones that everything would break without
     def self.essential_plugin_classes
-      [DangerfileMessagingPlugin, DangerfileGitPlugin, DangerfileDangerPlugin, DangerfileGitHubPlugin, DangerfileGitLabPlugin, DangerfileBitbucketServerPlugin, DangerfileBitbucketCloudPlugin]
+      [DangerfileMessagingPlugin, DangerfileGitPlugin, DangerfileDangerPlugin, DangerfileGitHubPlugin, DangerfileGitLabPlugin, DangerfileBitbucketServerPlugin, DangerfileBitbucketCloudPlugin, DangerfileVSTSPlugin, DangerfileLocalOnlyPlugin]
     end
 
     # Both of these methods exist on all objects
@@ -195,9 +197,7 @@ module Danger
       instance_eval do
         # rubocop:disable Lint/RescueException
         begin
-          # rubocop:disable Eval
-          eval(contents, nil, path.to_s)
-          # rubocop:enable Eval
+          eval_file(contents, path)
         rescue Exception => e
           message = "Invalid `#{path.basename}` file: #{e.message}"
           raise DSLError.new(message, path, e.backtrace, contents)
@@ -212,7 +212,7 @@ module Danger
       return if (violations[:errors] + violations[:warnings] + violations[:messages] + status[:markdowns]).count.zero?
 
       ui.section("Results:") do
-        [:errors, :warnings, :messages].each do |key|
+        %i(errors warnings messages).each do |key|
           formatted = key.to_s.capitalize + ":"
           title = case key
                   when :errors
@@ -222,7 +222,7 @@ module Danger
                   else
                     formatted
                   end
-          rows = violations[key]
+          rows = violations[key].uniq
           print_list(title, rows)
         end
 
@@ -241,16 +241,17 @@ module Danger
       violation_report[:errors].count > 0
     end
 
-    def post_results(danger_id, new_comment)
+    def post_results(danger_id, new_comment, remove_previous_comments)
       violations = violation_report
 
       env.request_source.update_pull_request!(
-        warnings: violations[:warnings],
-        errors: violations[:errors],
-        messages: violations[:messages],
-        markdowns: status_report[:markdowns],
+        warnings: violations[:warnings].uniq,
+        errors: violations[:errors].uniq,
+        messages: violations[:messages].uniq,
+        markdowns: status_report[:markdowns].uniq,
         danger_id: danger_id,
-        new_comment: new_comment
+        new_comment: new_comment,
+        remove_previous_comments: remove_previous_comments
       )
     end
 
@@ -259,7 +260,7 @@ module Danger
       env.scm.diff_for_folder(".".freeze, from: base_branch, to: head_branch)
     end
 
-    def run(base_branch, head_branch, dangerfile_path, danger_id, new_comment)
+    def run(base_branch, head_branch, dangerfile_path, danger_id, new_comment, remove_previous_comments)
       # Setup internal state
       init_plugins
       env.fill_environment_vars
@@ -274,10 +275,14 @@ module Danger
         # Push results to the API
         # Pass along the details of the run to the request source
         # to send back to the code review site.
-        post_results(danger_id, new_comment) unless danger_id.nil?
+        post_results(danger_id, new_comment, remove_previous_comments) unless danger_id.nil?
 
         # Print results in the terminal
         print_results
+      rescue DSLError => ex
+        # Push exception to the API and re-raise
+        post_exception(ex, danger_id, new_comment) unless danger_id.nil?
+        raise
       ensure
         # Makes sure that Danger specific git branches are cleaned
         env.clean_up
@@ -287,6 +292,10 @@ module Danger
     end
 
     private
+
+    def eval_file(contents, path)
+      eval(contents, nil, path.to_s) # rubocop:disable Eval
+    end
 
     def print_list(title, rows)
       unless rows.empty?
@@ -309,6 +318,14 @@ module Danger
         line.strip!
         "#{line}\n"
       end
+    end
+
+    def post_exception(ex, danger_id, new_comment)
+      env.request_source.update_pull_request!(
+        danger_id: danger_id,
+        new_comment: new_comment,
+        markdowns: [ex.to_markdown]
+      )
     end
   end
 end

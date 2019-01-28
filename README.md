@@ -3,6 +3,7 @@
 [![License](http://img.shields.io/badge/license-MIT-green.svg?style=flat)](https://github.com/orta/danger/blob/master/LICENSE)
 [![Gem](https://img.shields.io/gem/v/danger.svg?style=flat)](http://rubygems.org/gems/danger)
 [![Travis CI](https://img.shields.io/travis/danger/danger.svg?style=flat)](https://travis-ci.org/danger/danger)
+[![Join the community on Spectrum](https://withspectrum.github.io/badge/badge.svg)](https://spectrum.chat/danger)
 
 Formalize your Pull Request etiquette.
 
@@ -10,8 +11,9 @@ Formalize your Pull Request etiquette.
 
 <p align="center">
     <a href="#what-is-danger">What is Danger?</a> &bull;
+    <a href="VISION.md">Vision</a> &bull;
     <a href="#im-here-to-help-out">Helping Out</a> &bull;
-    <a href="#tell-me-of-these-plugins">Plugin Development</a>
+    <a href="https://danger.systems/guides/creating_your_first_plugin.html">Plugin Development</a>
 </p>
 
 -------
@@ -22,7 +24,7 @@ Danger runs after your CI, automating your team's conventions surrounding code r
 
 This provides another logical step in your process, through this Danger can help lint your rote tasks in daily code review.
 
-You can use Danger to codify your teams norms, leaving humans to think about harder problems.
+You can use Danger to codify your team's norms, leaving humans to think about harder problems.
 
 ## For example?
 
@@ -41,11 +43,9 @@ Danger provides the glue to let _you_ build out the rules specific to your team'
 
 Alright. So, actually, you may be in the wrong place. From here on in, this README is going to be for people who are interested in working on and improving on Danger.
 
-We keep all of the end-user documentation at [http://danger.systems](http://danger.systems).
+We keep all of the end-user documentation at [https://danger.systems](https://danger.systems).
 
-Some quick links: [Guides Index](http://danger.systems/guides.html), [DSL Reference](http://danger.systems/reference.html), [Getting Started](http://danger.systems/guides/getting_started.html) and [What does Danger Do?](http://danger.systems/guides/what_does_danger_do.html).
-
-Sidenote: There is a [pure JS version](https://github.com/danger/danger-js) in the works, it's at the point where it can fail your build but that's about it for now, would love help there if it interests you.
+Some quick links: [Guides Index](https://danger.systems/guides.html), [DSL Reference](https://danger.systems/reference.html), [Getting Started](https://danger.systems/guides/getting_started.html) and [What does Danger Do?](https://danger.systems/guides/what_does_danger_do.html).
 
 ## I'm here to help out!
 
@@ -76,17 +76,12 @@ I'd strongly recommend using `bundle exec guard` to run your tests as you work. 
 
 #### Debugging
 
-Ruby is super dynamic. One of the best ways to debug Ruby code is by using [pry](http://pryrepl.org/). We include pry for developers: when you have a problem, copy these two lines just before your problem and follow the instructions from "[I Want To Be A Danger Wizard](http://danger.systems/guides/troubleshooting.html#i-want-to-be-a-danger-wizard)."
+Ruby is super dynamic. One of the best ways to debug Ruby code is by using [pry](http://pryrepl.org/). We include pry for developers: when you have a problem, copy these two lines just before your problem and follow the instructions from "[I Want To Be A Danger Wizard](https://danger.systems/guides/troubleshooting.html#i-want-to-be-a-danger-wizard)."
 
 ```ruby
 require 'pry'
 binding.pry
 ```
-
-## Tell me of these Plugins
-
-* Follow the [Creating your first plugin](http://danger.systems/guides/creating_your_first_plugin.html) guide
-* (Talk through the tech specs here.)
 
 ## License, Contributor's Guidelines and Code of Conduct
 

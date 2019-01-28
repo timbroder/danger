@@ -14,7 +14,7 @@ module Danger
   #
   # @example Ensure that labels have been used on the PR
   #
-  #          fail "Please add labels to this PR" if github.pr_labels.empty?
+  #          failure "Please add labels to this PR" if github.pr_labels.empty?
   #
   # @example Check if a user is in a specific GitHub org, and message them if so
   #
@@ -24,11 +24,11 @@ module Danger
   #
   # @example Ensure there is a summary for a PR
   #
-  #          fail "Please provide a summary in the Pull Request description" if github.pr_body.length < 5
+  #          failure "Please provide a summary in the Pull Request description" if github.pr_body.length < 5
   #
   # @example Only accept PRs to the develop branch
   #
-  #          fail "Please re-submit this PR to develop, we may have already fixed your issue." if github.branch_for_base != "develop"
+  #          failure "Please re-submit this PR to develop, we may have already fixed your issue." if github.branch_for_base != "develop"
   #
   # @example Note when PRs don't reference a milestone, which goes away when it does
   #
@@ -226,15 +226,22 @@ module Danger
 
     # @!group GitHub Misc
     # Use to ignore inline messages which lay outside a diff's range, thereby not posting them in the main comment.
-    # @param    [Bool] dismiss
+    # You can set hash to change behavior per each kinds. (ex. `{warning: true, error: false}`)
+    # @param    [Bool] or [Hash<Symbol, Bool>] dismiss
     #           Ignore out of range inline messages, defaults to `true`
     #
     # @return   [void]
-    def dismiss_out_of_range_messages(dismiss: true)
-      @github.dismiss_out_of_range_messages = dismiss == true
+    def dismiss_out_of_range_messages(dismiss = true)
+      if dismiss.kind_of?(Hash)
+        @github.dismiss_out_of_range_messages = dismiss
+      elsif dismiss.kind_of?(TrueClass)
+        @github.dismiss_out_of_range_messages = true
+      elsif dismiss.kind_of?(FalseClass)
+        @github.dismiss_out_of_range_messages = false
+      end
     end
 
-    [:title, :body, :author, :labels, :json].each do |suffix|
+    %i(title body author labels json).each do |suffix|
       alias_method "mr_#{suffix}".to_sym, "pr_#{suffix}".to_sym
     end
 

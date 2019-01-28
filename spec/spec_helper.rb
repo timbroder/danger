@@ -34,6 +34,7 @@ RSpec.configure do |config|
   config.include Danger::Support::GitHubHelper, host: :github
   config.include Danger::Support::BitbucketServerHelper, host: :bitbucket_server
   config.include Danger::Support::BitbucketCloudHelper, host: :bitbucket_cloud
+  config.include Danger::Support::VSTSHelper, host: :vsts
   config.include Danger::Support::CIHelper, use: :ci_helper
 end
 
@@ -70,9 +71,9 @@ def testing_ui
 end
 # rubocop:enable Lint/NestedMethodDefinition
 
-def testing_dangerfile
-  env = Danger::EnvironmentManager.new(stub_env, testing_ui)
-  dm = Danger::Dangerfile.new(env, testing_ui)
+def testing_dangerfile(env = stub_env)
+  env_manager = Danger::EnvironmentManager.new(env, testing_ui)
+  dm = Danger::Dangerfile.new(env_manager, testing_ui)
 end
 
 def fixture_txt(file)
@@ -91,20 +92,20 @@ def diff_fixture(file)
   File.read("spec/fixtures/#{file}.diff")
 end
 
-def violation(message, sticky: false)
-  Danger::Violation.new(message, sticky)
+def violation_factory(message, sticky: false, file: nil, line: nil)
+  Danger::Violation.new(message, sticky, file, line)
 end
 
-def violations(messages, sticky: false)
-  messages.map { |s| violation(s, sticky: sticky) }
+def violations_factory(messages, sticky: false)
+  messages.map { |s| violation_factory(s, sticky: sticky) }
 end
 
-def markdown(message)
+def markdown_factory(message)
   Danger::Markdown.new(message)
 end
 
-def markdowns(messages)
-  messages.map { |s| markdown(s) }
+def markdowns_factory(messages)
+  messages.map { |s| markdown_factory(s) }
 end
 
 def with_git_repo(origin: "git@github.com:artsy/eigen")

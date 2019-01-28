@@ -19,7 +19,7 @@ module Danger
   #
   # @example Run a Dangerfile from inside a sub-folder
   #
-  #          danger.import_dangerfile(file: "danger/Dangerfile.private")
+  #          danger.import_dangerfile(path: "path/to/Dangerfile")
   #
   # @example Run a Dangerfile from inside a gem
   #
@@ -105,6 +105,8 @@ module Danger
         :bitbucket_server
       when Danger::RequestSources::BitbucketCloud
         :bitbucket_cloud
+      when Danger::RequestSources::VSTS
+        :vsts
       else
         :unknown
       end
@@ -154,7 +156,7 @@ module Danger
     def import_dangerfile_from_github(slug, branch = nil, path = nil)
       raise "`import_dangerfile_from_github` requires a string" unless slug.kind_of?(String)
       org, repo = slug.split("/")
-      download_url = env.request_source.file_url(organisation: org, repository: repo, branch: branch || "master", path: path || "Dangerfile")
+      download_url = env.request_source.file_url(organisation: org, repository: repo, branch: branch, path: path || "Dangerfile")
       local_path = download(download_url)
       @dangerfile.parse(Pathname.new(local_path))
     end

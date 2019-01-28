@@ -25,7 +25,7 @@ module Danger
       #
       # @return [String] The Markdown compatible link
       def markdown_link_to_message(message, _)
-        "#{messages.file}#L#{message.line}"
+        "#{message.file}#L#{message.line}"
       end
 
       # !@group Extension points
@@ -56,7 +56,7 @@ module Danger
 
       def table(name, emoji, violations, all_previous_violations, template: "github")
         content = violations
-        content = content.map { |v| process_markdown(v) } unless template == "bitbucket_server"
+        content = content.map { |v| process_markdown(v) } unless ["bitbucket_server", "vsts"].include?(template)
 
         kind = table_kind_from_title(name)
         previous_violations = all_previous_violations[kind] || []

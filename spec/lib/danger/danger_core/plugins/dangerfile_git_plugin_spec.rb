@@ -8,6 +8,7 @@ def run_in_repo_with_diff
       File.open(dir + "/file2", "w") { |f| f.write "Shorts.\nShoes." }
       `git add .`
       `git commit -m "adding file1 & file2"`
+      `git tag 1.0.0`
       `git checkout -b new-branch --quiet`
       File.open(dir + "/file2", "w") { |f| f.write "Pants!" }
       `git add .`
@@ -36,22 +37,21 @@ RSpec.describe Danger::DangerfileGitPlugin, host: :github do
       diff = [OpenStruct.new(type: "new", path: "added")]
       allow(@repo).to receive(:diff).and_return(diff)
 
-      expect(@dsl.added_files).to eq(["added"])
+      expect(@dsl.added_files).to eq(Danger::FileList.new(["added"]))
     end
 
     it "gets deleted_files " do
       diff = [OpenStruct.new(type: "deleted", path: "deleted")]
       allow(@repo).to receive(:diff).and_return(diff)
 
-      expect(@dsl.deleted_files).to eq(["deleted"])
+      expect(@dsl.deleted_files).to eq(Danger::FileList.new(["deleted"]))
     end
 
     it "gets modified_files " do
-      stats = { files: { "my/path/file_name" => "thing" } }
-      diff = OpenStruct.new(stats: stats)
+      diff = [OpenStruct.new(type: "modified", path: "my/path/file_name")]
       allow(@repo).to receive(:diff).and_return(diff)
 
-      expect(@dsl.modified_files).to eq(["my/path/file_name"])
+      expect(@dsl.modified_files).to eq(Danger::FileList.new(["my/path/file_name"]))
     end
 
     it "gets lines_of_code" do
@@ -80,6 +80,13 @@ RSpec.describe Danger::DangerfileGitPlugin, host: :github do
       allow(@repo).to receive(:log).and_return(log)
 
       expect(@dsl.commits).to eq(log)
+    end
+
+    it "gets tags" do
+      tag = "1.0.0\n2.0.0"
+      allow(@repo).to receive(:tags).and_return(tag)
+
+      expect(@dsl.tags).to all be_a(String)
     end
 
     describe "getting diff for a specific file" do
@@ -120,6 +127,25 @@ RSpec.describe Danger::DangerfileGitPlugin, host: :github do
           expect(info[:before]).to eq("Shorts.\nShoes.")
           expect(info[:after]).to eq("Pants!")
         end
+      end
+    end
+
+    describe "#renamed_files" do
+      it "delegates to scm" do
+        renamed_files = [{
+          before: "some/path/old",
+          after: "some/path/new"
+        }]
+
+        allow(@repo).to receive(:renamed_files).and_return(renamed_files)
+        expect(@dsl.renamed_files).to eq(renamed_files)
+      end
+    end
+
+    describe "#diff" do
+      it "delegates to scm" do
+        allow(@repo).to receive(:diff).and_return(:diff)
+        expect(@dsl.diff).to eq(:diff)
       end
     end
   end

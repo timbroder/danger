@@ -14,15 +14,15 @@ module Danger
   # @example Don't allow a file to be deleted
   #
   #          deleted = git.deleted_files.include? "my/favourite.file"
-  #          fail "Don't delete my precious" if deleted
+  #          failure "Don't delete my precious" if deleted
   #
   # @example Fail really big diffs
   #
-  #          fail "We cannot handle the scale of this PR" if git.lines_of_code > 50_000
+  #          failure "We cannot handle the scale of this PR" if git.lines_of_code > 50_000
   #
   # @example Warn when there are merge commits in the diff
   #
-  #          if commits.any? { |c| c.message =~ /^Merge branch 'master'/ }
+  #          if git.commits.any? { |c| c.message =~ /^Merge branch 'master'/ }
   #            warn 'Please rebase to get rid of the merge commits in this PR'
   #          end
   #
@@ -72,7 +72,23 @@ module Danger
     # @return [FileList<String>] an [Array] subclass
     #
     def modified_files
-      Danger::FileList.new(@git.diff.stats[:files].keys)
+      Danger::FileList.new(@git.diff.select { |diff| diff.type == "modified" }.map(&:path))
+    end
+
+    # @!group Git Metadata
+    # List of renamed files
+    # @return [Array<Hash>] with keys `:before` and `:after`
+    #
+    def renamed_files
+      @git.renamed_files
+    end
+
+    # @!group Git Metadata
+    # Whole diff
+    # @return [Git::Diff] from the gem `git`
+    #
+    def diff
+      @git.diff
     end
 
     # @!group Git Metadata
@@ -112,7 +128,7 @@ module Danger
     # @return [Git::Diff::DiffFile] from the gem `git`
     #
     def diff_for_file(file)
-      modified_files.include?(file) ? @git.diff[file] : nil
+      (added_files + modified_files).include?(file) ? @git.diff[file] : nil
     end
 
     # @!group Git Metadata
@@ -129,6 +145,14 @@ module Danger
         before: diff.blob(:src).contents,
         after: diff.blob(:dst).contents
       }
+    end
+
+    # @!group Git Metadata
+    # List of remote tags
+    # @return [String]
+    #
+    def tags
+      @git.tags.each_line
     end
   end
 end

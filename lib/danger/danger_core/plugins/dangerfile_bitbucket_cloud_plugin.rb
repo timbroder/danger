@@ -1,4 +1,5 @@
 # coding: utf-8
+
 require "danger/plugin_support/plugin"
 
 module Danger
@@ -15,15 +16,15 @@ module Danger
   #
   # @example Ensure that labels have been used on the PR
   #
-  #          fail "Please add labels to this PR" if bitbucket_cloud.pr_labels.empty?
+  #          failure "Please add labels to this PR" if bitbucket_cloud.pr_labels.empty?
   #
   # @example Ensure there is a summary for a PR
   #
-  #          fail "Please provide a summary in the Pull Request description" if bitbucket_cloud.pr_body.length < 5
+  #          failure "Please provide a summary in the Pull Request description" if bitbucket_cloud.pr_body.length < 5
   #
   # @example Only accept PRs to the develop branch
   #
-  #          fail "Please re-submit this PR to develop, we may have already fixed your issue." if bitbucket_cloud.branch_for_base != "develop"
+  #          failure "Please re-submit this PR to develop, we may have already fixed your issue." if bitbucket_cloud.branch_for_base != "develop"
   #
   # @example Highlight when a celebrity makes a pull request
   #
@@ -31,7 +32,7 @@ module Danger
   #
   # @example Ensure that all PRs have an assignee
   #
-  #          warn "This PR does not have any assignees yet." unless bitbucket_cloud.pr_json["reviewers"].length == 0
+  #          warn "This PR does not have any assignees yet." if bitbucket_cloud.pr_json[:reviewers].length == 0
   #
   # @example Send a message with links to a collection of specific files
   #
@@ -96,7 +97,7 @@ module Danger
     # @return [String]
     #
     def pr_author
-      @bs.pr_json[:author][:user][:slug].to_s
+      @bs.pr_json[:author][:username]
     end
 
     # @!group PR Commit Metadata
@@ -104,7 +105,7 @@ module Danger
     # @return [String]
     #
     def branch_for_base
-      @bs.pr_json[:toRef][:displayId].to_s
+      @bs.pr_json[:destination][:branch][:name]
     end
 
     # @!group PR Commit Metadata
@@ -112,7 +113,7 @@ module Danger
     # @return [String]
     #
     def pr_link
-      @bs.pr_json[:links][:self].flat_map { |l| l[:href] }.first.to_s
+      @bs.pr_json[:links][:self][:href]
     end
 
     # @!group PR Commit Metadata
@@ -120,7 +121,7 @@ module Danger
     # @return [String]
     #
     def branch_for_head
-      @bs.pr_json[:fromRef][:displayId].to_s
+      @bs.pr_json[:destination][:branch][:name]
     end
 
     # @!group PR Commit Metadata
@@ -128,7 +129,7 @@ module Danger
     # @return [String]
     #
     def base_commit
-      @bs.pr_json[:toRef][:latestCommit].to_s
+      @bs.pr_json[:destination][:commit][:hash]
     end
 
     # @!group PR Commit Metadata
@@ -136,63 +137,8 @@ module Danger
     # @return [String]
     #
     def head_commit
-      @bs.pr_json[:fromRef][:latestCommit].to_s
+      @bs.pr_json[:source][:commit][:hash]
     end
 
-    # @!group Bitbucket Cloud Misc
-    # Returns a list of HTML anchors for a file, or files in the head repository.
-    # It returns a string of multiple anchors if passed an array.
-    # @param    [String or Array<String>] paths
-    #           A list of strings to convert to github anchors
-    # @param    [Bool] full_path
-    #           Shows the full path as the link's text, defaults to `true`.
-    #
-    # @return [String]
-    #
-    def html_link(paths, full_path: true)
-      create_link(paths, full_path) { |href, text| create_html_link(href, text) }
-    end
-
-    # @!group Bitbucket Cloud Misc
-    # Returns a list of Markdown links for a file, or files in the head repository.
-    # It returns a string of multiple links if passed an array.
-    # @param    [String or Array<String>] paths
-    #           A list of strings to convert to Markdown links
-    # @param    [Bool] full_path
-    #           Shows the full path as the link's text, defaults to `true`.
-    #
-    # @return [String]
-    #
-    def markdown_link(paths, full_path: true)
-      create_link(paths, full_path) { |href, text| create_markdown_link(href, text) }
-    end
-
-    private
-
-    def create_link(paths, full_path)
-      paths = [paths] unless paths.kind_of?(Array)
-      commit = head_commit
-      repo = pr_json[:fromRef][:repository][:links][:self].flat_map { |l| l[:href] }.first
-
-      paths = paths.map do |path|
-        path, line = path.split("#")
-        url_path = path.start_with?("/") ? path : "/#{path}"
-        text = full_path ? path : File.basename(path)
-        url_path.gsub!(" ", "%20")
-        line_ref = line ? "##{line}" : ""
-        yield("#{repo}#{url_path}?at=#{commit}#{line_ref}", text)
-      end
-
-      return paths.first if paths.count < 2
-      paths.first(paths.count - 1).join(", ") + " & " + paths.last
-    end
-
-    def create_html_link(href, text)
-      "<a href='#{href}'>#{text}</a>"
-    end
-
-    def create_markdown_link(href, text)
-      "[#{text}](#{href})"
-    end
   end
 end

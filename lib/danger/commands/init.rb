@@ -143,9 +143,14 @@ module Danger
     end
 
     def current_repo_slug
-      @git = GitRepo.new
-      repo_matches = @git.origins.match(%r{([\/:])([^\/]+\/[^\/.]+)(?:.git)?$})
-      (repo_matches[2] || "[Your/Repo]").strip
+      git = GitRepo.new
+
+      author_repo_regexp = %r{(?:[\/:])([^\/]+\/[^\/]+)(?:.git)?$}
+      last_git_regexp = /.git$/
+
+      matches = git.origins.match(author_repo_regexp)
+
+      matches ? matches[1].gsub(last_git_regexp, "").strip : "[Your/Repo]"
     end
 
     def setup_danger_ci
@@ -177,7 +182,7 @@ module Danger
 
     def uses_travis
       danger = "bundle exec danger".yellow
-      config = YAML.load(File.read(".travis.yml")) # rubocop:disable Security/YAMLLoad
+      config = YAML.load(File.read(".travis.yml"))
       if config.kind_of?(Hash) && config["script"]
         ui.say "Add " + "- ".yellow + danger + " as a new step in the " + "script".yellow + " section of your .travis.yml file."
       else
@@ -190,7 +195,7 @@ module Danger
 
     def uses_circle
       danger = "- bundle exec danger".yellow
-      config = YAML.load(File.read("circle.yml")) # rubocop:disable Security/YAMLLoad
+      config = YAML.load(File.read("circle.yml"))
 
       if config.kind_of?(Hash) && config["test"]
         if config["test"]["post"]
@@ -243,14 +248,14 @@ module Danger
 
       ui.say "In order to expose an environment variable, go to:"
       ui.link "https://circleci.com/gh/#{current_repo_slug}/edit#env-vars"
-      ui.say "The name is " + "DANGER_GITHUB_API_TOKEN".yellow + " and the value is the GitHub Personal Acess Token."
+      ui.say "The name is " + "DANGER_GITHUB_API_TOKEN".yellow + " and the value is the GitHub Personal Access Token."
     end
 
     def unsure_token
-      ui.say "You need to expose a token called " + "DANGER_GITHUB_API_TOKEN".yellow + " and the value is the GitHub Personal Acess Token."
+      ui.say "You need to expose a token called " + "DANGER_GITHUB_API_TOKEN".yellow + " and the value is the GitHub Personal Access Token."
       ui.say "Depending on the CI system, this may need to be done on the machine (in the " + "~/.bashprofile".yellow + ") or in a web UI somewhere."
       ui.say "We have a guide for all supported CI systems on danger.systems:"
-      ui.link "http://danger.systems/guides/getting_started.html#setting-up-danger-to-run-on-your-ci"
+      ui.link "https://danger.systems/guides/getting_started.html#setting-up-danger-to-run-on-your-ci"
     end
 
     def note_about_clicking_links
@@ -265,9 +270,9 @@ module Danger
 
     def info
       ui.header "Useful info"
-      ui.say "- One of the best ways to test out new rules locally is via " + "bundle exec danger local".yellow + "."
+      ui.say "- One of the best ways to test out new rules locally is via " + "bundle exec danger pr".yellow + "."
       ui.pause 0.6
-      ui.say "- You can have Danger output all of its variables to the console via the " + "--verbose".yellow + " option."
+      ui.say "- You can have Danger output all of her variables to the console via the " + "--verbose".yellow + " option."
       ui.pause 0.6
       ui.say "- You can look at the following Dangerfiles to get some more ideas:"
       ui.pause 0.6
@@ -281,8 +286,8 @@ module Danger
       ui.pause 0.6
 
       ui.say "And you're good to go. Danger is a collaboration between Orta Therox, Gem 'Danger' McShane and Felix Krause."
-      ui.say "If you like it, let others know. If you want to know more, follow " + "@orta".yellow + " and " + "@KrauseFx".yellow + " on Twitter."
-      ui.say "If you don't like it, help us improve it! xxx"
+      ui.say "If you like Danger, let others know. If you want to know more, follow " + "@orta".yellow + " and " + "@KrauseFx".yellow + " on Twitter."
+      ui.say "If you don't like Danger, help us improve the project! xxx"
     end
 
     def darwin?

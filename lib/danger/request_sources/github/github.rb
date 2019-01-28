@@ -1,10 +1,12 @@
 # coding: utf-8
+
+# rubocop:disable Metrics/ClassLength
+
 require "octokit"
 require "danger/helpers/comments_helper"
 require "danger/helpers/comment"
 require "danger/request_sources/github/github_review"
 require "danger/request_sources/github/github_review_unsupported"
-require "danger/request_sources/github/octokit_pr_review"
 require "danger/request_sources/support/get_ignored_violation"
 
 module Danger
@@ -19,7 +21,7 @@ module Danger
       end
 
       def self.optional_env_vars
-        ["DANGER_GITHUB_HOST", "DANGER_GITHUB_API_BASE_URL"]
+        ["DANGER_GITHUB_HOST", "DANGER_GITHUB_API_BASE_URL", "DANGER_OCTOKIT_VERIFY_SSL"]
       end
 
       def initialize(ci_source, environment)
@@ -29,6 +31,13 @@ module Danger
         self.dismiss_out_of_range_messages = false
 
         @token = @environment["DANGER_GITHUB_API_TOKEN"]
+      end
+
+      def get_pr_from_branch(repo_name, branch_name, owner)
+        prs = client.pull_requests(repo_name, head: "#{owner}:#{branch_name}")
+        unless prs.empty?
+          prs.first.number
+        end
       end
 
       def validates_as_api_source?
@@ -41,6 +50,10 @@ module Danger
 
       def host
         @host = @environment["DANGER_GITHUB_HOST"] || "github.com"
+      end
+
+      def verify_ssl
+        @environment["DANGER_OCTOKIT_VERIFY_SSL"] == "false" ? false : true
       end
 
       # `DANGER_GITHUB_API_HOST` is the old name kept for legacy reasons and
@@ -56,8 +69,10 @@ module Danger
 
       def client
         raise "No API token given, please provide one using `DANGER_GITHUB_API_TOKEN`" if !@token && !support_tokenless_auth
-
         @client ||= begin
+          Octokit.configure do |config|
+            config.connection_options[:ssl] = { verify: verify_ssl }
+          end
           Octokit::Client.new(access_token: @token, auto_paginate: true, api_endpoint: api_url)
         end
       end
@@ -83,16 +98,18 @@ module Danger
 
       def setup_danger_branches
         # we can use a github specific feature here:
+        base_branch = self.pr_json["base"]["ref"]
         base_commit = self.pr_json["base"]["sha"]
+        head_branch = self.pr_json["head"]["ref"]
         head_commit = self.pr_json["head"]["sha"]
 
         # Next, we want to ensure that we have a version of the current branch at a known location
-        scm.ensure_commitish_exists! base_commit
+        scm.ensure_commitish_exists_on_branch! base_branch, base_commit
         self.scm.exec "branch #{EnvironmentManager.danger_base_branch} #{base_commit}"
 
         # OK, so we want to ensure that we have a known head branch, this will always represent
         # the head of the PR ( e.g. the most recent commit that will be merged. )
-        scm.ensure_commitish_exists! head_commit
+        scm.ensure_commitish_exists_on_branch! head_branch, head_commit
         self.scm.exec "branch #{EnvironmentManager.danger_head_branch} #{head_commit}"
       end
 
@@ -123,69 +140,73 @@ module Danger
       end
 
       # Sending data to GitHub
-      def update_pull_request!(warnings: [], errors: [], messages: [], markdowns: [], danger_id: "danger", new_comment: false)
+      def update_pull_request!(warnings: [], errors: [], messages: [], markdowns: [], danger_id: "danger", new_comment: false, remove_previous_comments: false)
         comment_result = {}
         editable_comments = issue_comments.select { |comment| comment.generated_by_danger?(danger_id) }
         last_comment = editable_comments.last
-        should_create_new_comment = new_comment || last_comment.nil?
+        should_create_new_comment = new_comment || last_comment.nil? || remove_previous_comments
 
-        if should_create_new_comment
-          previous_violations = {}
-        else
-          previous_violations = parse_comment(last_comment.body)
-        end
+        previous_violations =
+          if should_create_new_comment
+            {}
+          else
+            parse_comment(last_comment.body)
+          end
 
-        cmp = proc do |a, b|
-          next -1 unless a.file
-          next 1 unless b.file
+        regular_violations = regular_violations_group(
+          warnings: warnings,
+          errors: errors,
+          messages: messages,
+          markdowns: markdowns
+        )
 
-          next a.line <=> b.line if a.file == b.file
-          next a.file <=> b.file
-        end
+        inline_violations = inline_violations_group(
+          warnings: warnings,
+          errors: errors,
+          messages: messages,
+          markdowns: markdowns
+        )
 
-        # Sort to group inline comments by file
-        # We copy because we need to mutate this arrays for inlines
-        comment_warnings = warnings.sort(&cmp)
-        comment_errors = errors.sort(&cmp)
-        comment_messages = messages.sort(&cmp)
-        comment_markdowns = markdowns.sort(&cmp)
+        rest_inline_violations = submit_inline_comments!({
+          danger_id: danger_id,
+          previous_violations: previous_violations
+        }.merge(inline_violations))
 
-        submit_inline_comments!(warnings: comment_warnings,
-                                  errors: comment_errors,
-                                messages: comment_messages,
-                                markdowns: comment_markdowns,
-                      previous_violations: previous_violations,
-                                danger_id: danger_id)
+        main_violations = merge_violations(
+          regular_violations, rest_inline_violations
+        )
 
-        main_violations = comment_warnings + comment_errors + comment_messages + comment_markdowns
-        if previous_violations.empty? && main_violations.empty?
-          # Just remove the comment, if there's nothing to say.
+        main_violations_sum = main_violations.values.inject(:+)
+
+        if (previous_violations.empty? && main_violations_sum.empty?) || remove_previous_comments
+          # Just remove the comment, if there's nothing to say or --remove-previous-comments CLI was set.
           delete_old_comments!(danger_id: danger_id)
         end
 
         # If there are still violations to show
-        unless main_violations.empty?
-          body = generate_comment(warnings: comment_warnings,
-                                    errors: comment_errors,
-                                  messages: comment_messages,
-                                  markdowns: comment_markdowns,
-                        previous_violations: previous_violations,
-                                  danger_id: danger_id,
-                                  template: "github")
+        if main_violations_sum.any?
+          body = generate_comment({
+            template: "github",
+            danger_id: danger_id,
+            previous_violations: previous_violations
+          }.merge(main_violations))
 
-          if should_create_new_comment
-            comment_result = client.add_comment(ci_source.repo_slug, ci_source.pull_request_id, body)
-          else
-            comment_result = client.update_comment(ci_source.repo_slug, last_comment.id, body)
-          end
+          comment_result =
+            if should_create_new_comment
+              client.add_comment(ci_source.repo_slug, ci_source.pull_request_id, body)
+            else
+              client.update_comment(ci_source.repo_slug, last_comment.id, body)
+            end
         end
 
         # Now, set the pull request status.
         # Note: this can terminate the entire process.
-        submit_pull_request_status!(warnings: warnings,
-                                      errors: errors,
-                                 details_url: comment_result["html_url"],
-                                   danger_id: danger_id)
+        submit_pull_request_status!(
+          warnings: warnings,
+          errors: errors,
+          details_url: comment_result["html_url"],
+          danger_id: danger_id
+        )
       end
 
       def submit_pull_request_status!(warnings: [], errors: [], details_url: [], danger_id: "danger")
@@ -233,17 +254,17 @@ module Danger
 
       def submit_inline_comments!(warnings: [], errors: [], messages: [], markdowns: [], previous_violations: [], danger_id: "danger")
         # Avoid doing any fetchs if there's no inline comments
-        return if (warnings + errors + messages + markdowns).select(&:inline?).empty?
+        return {} if (warnings + errors + messages + markdowns).select(&:inline?).empty?
 
         diff_lines = self.pr_diff.lines
         pr_comments = client.pull_request_comments(ci_source.repo_slug, ci_source.pull_request_id)
         danger_comments = pr_comments.select { |comment| Comment.from_github(comment).generated_by_danger?(danger_id) }
         non_danger_comments = pr_comments - danger_comments
 
-        submit_inline_comments_for_kind!("warning", warnings, diff_lines, danger_comments, previous_violations["warning"], danger_id: danger_id)
-        submit_inline_comments_for_kind!("no_entry_sign", errors, diff_lines, danger_comments, previous_violations["error"], danger_id: danger_id)
-        submit_inline_comments_for_kind!("book", messages, diff_lines, danger_comments, previous_violations["message"], danger_id: danger_id)
-        submit_inline_comments_for_kind!(nil, markdowns, diff_lines, danger_comments, [], danger_id: danger_id)
+        warnings = submit_inline_comments_for_kind!(:warning, warnings, diff_lines, danger_comments, previous_violations["warning"], danger_id: danger_id)
+        errors = submit_inline_comments_for_kind!(:error, errors, diff_lines, danger_comments, previous_violations["error"], danger_id: danger_id)
+        messages = submit_inline_comments_for_kind!(:message, messages, diff_lines, danger_comments, previous_violations["message"], danger_id: danger_id)
+        markdowns = submit_inline_comments_for_kind!(:markdown, markdowns, diff_lines, danger_comments, [], danger_id: danger_id)
 
         # submit removes from the array all comments that are still in force
         # so we strike out all remaining ones
@@ -265,6 +286,13 @@ module Danger
             client.delete_pull_request_comment(ci_source.repo_slug, comment["id"]) if replies.empty?
           end
         end
+
+        {
+          warnings: warnings,
+          errors: errors,
+          messages: messages,
+          markdowns: markdowns
+        }
       end
 
       def messages_are_equivalent(m1, m2)
@@ -273,18 +301,19 @@ module Danger
           m1.message.sub(blob_regexp, "") == m2.message.sub(blob_regexp, "")
       end
 
-      def submit_inline_comments_for_kind!(emoji, messages, diff_lines, danger_comments, previous_violations, danger_id: "danger")
+      def submit_inline_comments_for_kind!(kind, messages, diff_lines, danger_comments, previous_violations, danger_id: "danger")
         head_ref = pr_json["head"]["sha"]
         previous_violations ||= []
-        is_markdown_content = emoji.nil?
+        is_markdown_content = kind == :markdown
+        emoji = { warning: "warning", error: "no_entry_sign", message: "book" }[kind]
 
-        submit_inline = proc do |m|
+        messages.reject do |m|
           next false unless m.file && m.line
 
-          position = find_position_in_diff diff_lines, m
+          position = find_position_in_diff diff_lines, m, kind
 
           # Keep the change if it's line is not in the diff and not in dismiss mode
-          next self.dismiss_out_of_range_messages if position.nil?
+          next dismiss_out_of_range_messages_for(kind) if position.nil?
 
           # Once we know we're gonna submit it, we format it
           if is_markdown_content
@@ -299,13 +328,14 @@ module Danger
           end
 
           matching_comments = danger_comments.select do |comment_data|
-            if comment_data["path"] == m.file && comment_data["commit_id"] == head_ref && comment_data["position"] == position
+            if comment_data["path"] == m.file && comment_data["position"] == position
               # Parse it to avoid problems with strikethrough
               violation = violations_from_table(comment_data["body"]).first
               if violation
                 messages_are_equivalent(violation, m)
               else
-                comment_data["body"] == body
+                blob_regexp = %r{blob/[0-9a-z]+/}
+                comment_data["body"].sub(blob_regexp, "") == body.sub(blob_regexp, "")
               end
             else
               false
@@ -313,8 +343,17 @@ module Danger
           end
 
           if matching_comments.empty?
-            client.create_pull_request_comment(ci_source.repo_slug, ci_source.pull_request_id,
-                                               body, head_ref, m.file, position)
+            begin
+              client.create_pull_request_comment(ci_source.repo_slug, ci_source.pull_request_id,
+                                                 body, head_ref, m.file, position)
+            rescue Octokit::UnprocessableEntity => e
+              # Show more detail for UnprocessableEntity error
+              message = [e, "body: #{body}", "head_ref: #{head_ref}", "filename: #{m.file}", "position: #{position}"].join("\n")
+              puts message
+
+              # Not reject because this comment has not completed
+              next false
+            end
           else
             # Remove the surviving comment so we don't strike it out
             danger_comments.reject! { |c| matching_comments.include? c }
@@ -327,12 +366,10 @@ module Danger
           # Remove this element from the array
           next true
         end
-
-        messages.reject!(&submit_inline)
       end
 
-      def find_position_in_diff(diff_lines, message)
-        range_header_regexp = /@@ -([0-9]+),([0-9]+) \+(?<start>[0-9]+)(,(?<end>[0-9]+))? @@.*/
+      def find_position_in_diff(diff_lines, message, kind)
+        range_header_regexp = /@@ -([0-9]+)(,([0-9]+))? \+(?<start>[0-9]+)(,(?<end>[0-9]+))? @@.*/
         file_header_regexp = %r{^diff --git a/.*}
 
         pattern = "+++ b/" + message.file + "\n"
@@ -344,6 +381,11 @@ module Danger
         file_line = nil
 
         diff_lines.drop(file_start).each do |line|
+          # If the line has `No newline` annotation, position need increment
+          if line.eql?("\\ No newline at end of file\n")
+            position += 1
+            next
+          end
           # If we found the start of another file diff, we went too far
           break if line.match file_header_regexp
 
@@ -353,7 +395,10 @@ module Danger
           # we need to count how many lines in new file we have
           # so we do it one by one ignoring the deleted lines
           if !file_line.nil? && !line.start_with?("-")
-            break if file_line == message.line
+            if file_line == message.line
+              file_line = nil if dismiss_out_of_range_messages_for(kind) && !line.start_with?("+")
+              break
+            end
             file_line += 1
           end
 
@@ -372,7 +417,7 @@ module Danger
 
           # We are past the line position, just abort
           break if message.line.to_i < range_start
-          next unless message.line.to_i >= range_start && message.line.to_i <= range_end
+          next unless message.line.to_i >= range_start && message.line.to_i < range_end
 
           file_line = range_start
         end
@@ -411,10 +456,64 @@ module Danger
         nil
       end
 
+      def dismiss_out_of_range_messages_for(kind)
+        if self.dismiss_out_of_range_messages.kind_of?(Hash) && self.dismiss_out_of_range_messages[kind]
+          self.dismiss_out_of_range_messages[kind]
+        elsif self.dismiss_out_of_range_messages == true
+          self.dismiss_out_of_range_messages
+        else
+          false
+        end
+      end
+
       # @return [String] A URL to the specific file, ready to be downloaded
-      def file_url(organisation: nil, repository: nil, branch: "master", path: nil)
+      def file_url(organisation: nil, repository: nil, branch: nil, path: nil)
         organisation ||= self.organisation
-        "https://raw.githubusercontent.com/#{organisation}/#{repository}/#{branch}/#{path}"
+
+        begin
+          # Retrieve the download URL (default branch on nil param)
+          contents = client.contents("#{organisation}/#{repository}", path: path, ref: branch)
+          @download_url = contents["download_url"]
+        rescue Octokit::ClientError
+          # Fallback to github.com
+          branch ||= "master"
+          @download_url = "https://raw.githubusercontent.com/#{organisation}/#{repository}/#{branch}/#{path}"
+        end
+      end
+
+      private
+
+      def regular_violations_group(warnings: [], errors: [], messages: [], markdowns: [])
+        {
+          warnings: warnings.reject(&:inline?),
+          errors: errors.reject(&:inline?),
+          messages: messages.reject(&:inline?),
+          markdowns: markdowns.reject(&:inline?)
+        }
+      end
+
+      def inline_violations_group(warnings: [], errors: [], messages: [], markdowns: [])
+        cmp = proc do |a, b|
+          next -1 unless a.file && a.line
+          next 1 unless b.file && b.line
+
+          next a.line <=> b.line if a.file == b.file
+          next a.file <=> b.file
+        end
+
+        # Sort to group inline comments by file
+        {
+          warnings: warnings.select(&:inline?).sort(&cmp),
+          errors: errors.select(&:inline?).sort(&cmp),
+          messages: messages.select(&:inline?).sort(&cmp),
+          markdowns: markdowns.select(&:inline?).sort(&cmp)
+        }
+      end
+
+      def merge_violations(*violation_groups)
+        violation_groups.inject({}) do |accumulator, group|
+          accumulator.merge(group) { |_, old, fresh| old + fresh }
+        end
       end
     end
   end

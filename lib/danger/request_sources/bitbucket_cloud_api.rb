@@ -1,16 +1,18 @@
 # coding: utf-8
+
 require "danger/helpers/comments_helper"
 
 module Danger
   module RequestSources
     class BitbucketCloudAPI
-      attr_accessor :host, :pr_api_endpoint, :pr_api_endpoint_v1
+      attr_accessor :host, :project, :slug, :pull_request_id
 
-      def initialize(project, slug, pull_request_id, environment)
+      def initialize(repo_slug, pull_request_id, branch_name, environment)
         @username = environment["DANGER_BITBUCKETCLOUD_USERNAME"]
         @password = environment["DANGER_BITBUCKETCLOUD_PASSWORD"]
-        self.pr_api_endpoint = "https://api.bitbucket.org/2.0/repositories/#{project}/#{slug}/pullrequests/#{pull_request_id}"
-        self.pr_api_endpoint_v1 = "https://api.bitbucket.org/1.0/repositories/#{project}/#{slug}/pullrequests/#{pull_request_id}"
+        self.project, self.slug = repo_slug.split("/")
+        self.pull_request_id = pull_request_id || fetch_pr_from_branch(branch_name)
+        self.host = "https://bitbucket.org/"
       end
 
       def inspect
@@ -25,6 +27,10 @@ module Danger
 
       def credentials_given?
         @username && !@username.empty? && @password && !@password.empty?
+      end
+
+      def pull_request(*)
+        fetch_pr_json
       end
 
       def fetch_pr_json
@@ -50,16 +56,43 @@ module Danger
 
       private
 
+      def base_url(version)
+        "https://api.bitbucket.org/#{version}.0/repositories/#{project}/#{slug}/pullrequests"
+      end
+
+      def pr_api_endpoint
+        "#{base_url(2)}/#{pull_request_id}"
+      end
+
+      def pr_api_endpoint_v1
+        "#{base_url(1)}/#{pull_request_id}"
+      end
+
+      def prs_api_endpoint(branch_name)
+        "#{base_url(2)}?q=source.branch.name=\"#{branch_name}\""
+      end
+
+      def fetch_pr_from_branch(branch_name)
+        uri = URI(URI.escape(prs_api_endpoint(branch_name)))
+        fetch_json(uri)[:values][0][:id]
+      end
+
       def fetch_json(uri)
+        raise credentials_not_available unless credentials_given?
+
         req = Net::HTTP::Get.new(uri.request_uri, { "Content-Type" => "application/json" })
         req.basic_auth @username, @password
         res = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) do |http|
           http.request(req)
         end
+        raise error_fetching_json(uri.to_s, res.code) unless res.code == "200"
+
         JSON.parse(res.body, symbolize_names: true)
       end
 
       def post(uri, body)
+        raise credentials_not_available unless credentials_given?
+
         req = Net::HTTP::Post.new(uri.request_uri, { "Content-Type" => "application/json" })
         req.basic_auth @username, @password
         req.body = body
@@ -69,12 +102,23 @@ module Danger
       end
 
       def delete(uri)
+        raise credentials_not_available unless credentials_given?
+        
         req = Net::HTTP::Delete.new(uri.request_uri, { "Content-Type" => "application/json" })
         req.basic_auth @username, @password
         Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) do |http|
           http.request(req)
         end
       end
+
+      def credentials_not_available
+        "Credentials not available. Provide DANGER_BITBUCKETCLOUD_USERNAME and DANGER_BITBUCKETCLOUD_PASSWORD as environment variables."
+      end
+
+      def error_fetching_json(url, status_code)
+        "Error fetching json for: #{url}, status code: #{status_code}"
+      end
+
     end
   end
 end
